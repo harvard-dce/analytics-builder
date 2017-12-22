@@ -1,0 +1,82 @@
+AWSTemplateFormatVersion : '2010-09-09'
+Description: Build pipeline for analytics lambda functions
+
+Parameters:
+
+  GithubOAuthToken:
+    Type: String
+
+Resources:
+
+  CodeArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-artifact-bucket"
+
+  BuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-service-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service: codebuild.amazonaws.com
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service: codepipeline.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess
+        - arn:aws:iam::aws:policy/AWSCodePipelineFullAccess
+
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-build-project"
+      Artifacts:
+        Type: S3
+        Location: !Ref CodeArtifactBucket
+        
+
+  BuildPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub "${AWS::StackName}-pipeline"
+      ArtifactStore:
+        Location: !Ref CodeArtifactBucket
+        Type: S3
+      RoleArn: !GetAtt [BuildServiceRole, Arn]
+      Stages:
+        -
+          Name: SourceAction
+          ActionTypeId:
+            Category: Source
+            Owner: ThirdParty
+            Version: 1
+            Provider: Github
+          OutputArtifacts:
+            - Name: SourceOutput
+          Confguration:
+            Owner: "harvard-dce"
+            Repo: "analytics-lambda-functions"
+            OAuthToken: !Ref GithubOAuthToken
+            Branch: master
+          RunOrder: 1
+        -
+          Name: BuildAction
+          InputArtifacts:
+            - Name: SourceOutput
+          ActionTypeId:
+            Category: Build
+            Owner: AWS
+            Version: 1
+            Provider: CodeBuild
+          Configuration:
+            ProjectName: !Ref BuildProject
+          OutputArtifacts:
+            - Name: LambdaPackages
+          RunOrder: 1
+
